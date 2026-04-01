@@ -1,6 +1,5 @@
 """Unit tests for H3 coordinate conversion."""
 
-import pytest
 import h3
 
 from src.shared.constants import H3_RESOLUTION

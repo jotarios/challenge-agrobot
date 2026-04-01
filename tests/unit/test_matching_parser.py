@@ -1,7 +1,6 @@
 """Unit tests for DMS record parsing in the Matching Engine."""
 
 import json
-import pytest
 
 from src.lambdas.matching.parser import parse_dms_record
 

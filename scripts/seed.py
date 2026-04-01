@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from src.api.deps import hash_password
 from src.models.alert_rule import AlertRule
-from src.models.base import Base
 from src.models.metric_type import MetricType
 from src.models.rule_group import RuleCondition, RuleGroup
 from src.models.user import User

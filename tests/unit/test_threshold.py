@@ -1,6 +1,5 @@
 """Unit tests for threshold comparison logic."""
 
-import pytest
 
 from src.shared.threshold import evaluate_threshold
 

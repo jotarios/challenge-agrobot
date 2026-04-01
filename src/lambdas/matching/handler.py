@@ -12,7 +12,6 @@ Uses aws-lambda-powertools Batch Processor for partial batch failure handling.
 """
 
 import json
-import logging
 import uuid
 
 import boto3
@@ -27,7 +26,7 @@ from aws_lambda_powertools.utilities.batch import (
 from aws_lambda_powertools.utilities.data_classes.kinesis_stream_event import (
     KinesisStreamRecord,
 )
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import selectinload
 
