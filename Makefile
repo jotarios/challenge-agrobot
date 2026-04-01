@@ -111,21 +111,33 @@ kinesis-shards: ## List Kinesis stream shards
 deploy-bootstrap: ## Bootstrap CDK in your AWS account (one-time)
 	pip install -r infra/requirements.txt -q && cdk bootstrap
 
-deploy: ## Deploy all infrastructure to AWS
-	pip install -r infra/requirements.txt -q && cdk deploy --require-approval never
+deploy: ## Deploy all 3 stacks (Network → Data → App)
+	pip install -r infra/requirements.txt -q && cdk deploy --all --require-approval never
+
+deploy-app: ## Redeploy only the App stack (fast, ~2 min)
+	cdk deploy AgrobotAppStack --require-approval never
 
 deploy-destroy: ## DESTROY all AWS infrastructure (saves money!)
-	cdk destroy --force
+	cdk destroy --all --force
 
-deploy-status: ## Check CloudFormation stack status
-	aws cloudformation describe-stacks --stack-name AgrobotStack --query 'Stacks[0].StackStatus' --output text
+deploy-status: ## Check all stack statuses
+	@echo "Network:" && aws cloudformation describe-stacks --stack-name AgrobotNetworkStack --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "  not deployed"
+	@echo "Data:" && aws cloudformation describe-stacks --stack-name AgrobotDataStack --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "  not deployed"
+	@echo "App:" && aws cloudformation describe-stacks --stack-name AgrobotAppStack --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "  not deployed"
 
 deploy-test: ## Run integration tests against deployed AWS stack
 	./scripts/test-cloud.sh
 
+SCENARIO ?= NORMAL
+DURATION ?= 30
+EVENTS ?= 100
+
+deploy-simulate: ## Run simulator as ECS task against cloud RDS (usage: make deploy-simulate SCENARIO=HEAT_WAVE DURATION=10)
+	./scripts/simulate-cloud.sh $(SCENARIO) $(DURATION) $(EVENTS)
+
 deploy-url: ## Print the deployed API URL
-	@aws cloudformation describe-stacks --stack-name AgrobotStack \
-		--query 'Stacks[0].Outputs[?contains(OutputKey,`ServiceURL`) || contains(OutputKey,`LoadBalancer`)].OutputValue' \
+	@aws cloudformation describe-stacks --stack-name AgrobotAppStack \
+		--query 'Stacks[0].Outputs[].OutputValue' \
 		--output text | head -1
 
 # ── Cleanup ──────────────────────────────────────────────────
