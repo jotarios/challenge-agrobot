@@ -10,5 +10,7 @@ COPY scripts/ scripts/
 COPY alembic/ alembic/
 COPY alembic.ini .
 
-ENTRYPOINT ["scripts/entrypoint.sh"]
+RUN chmod +x scripts/entrypoint.sh
+
+ENTRYPOINT ["/bin/bash", "scripts/entrypoint.sh"]
 CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]

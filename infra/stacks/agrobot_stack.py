@@ -66,7 +66,7 @@ class AgrobotStack(Stack):
             self,
             "AgrobotParamGroup",
             engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_1
+                version=rds.PostgresEngineVersion.VER_16_3
             ),
             parameters={"rds.logical_replication": "1"},
         )
@@ -75,7 +75,7 @@ class AgrobotStack(Stack):
             self,
             "AgrobotDb",
             engine=rds.DatabaseInstanceEngine.postgres(
-                version=rds.PostgresEngineVersion.VER_16_1
+                version=rds.PostgresEngineVersion.VER_16_3
             ),
             instance_type=ec2.InstanceType.of(
                 ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MEDIUM
@@ -103,22 +103,12 @@ class AgrobotStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        # RDS Proxy (primary - write)
-        primary_proxy = rds.DatabaseProxy(
+        # RDS Proxy — single proxy for both read/write
+        # Use proxy endpoint for writes, read replica endpoint directly for reads
+        db_proxy = rds.DatabaseProxy(
             self,
-            "AgrobotPrimaryProxy",
+            "AgrobotProxy",
             proxy_target=rds.ProxyTarget.from_instance(db_instance),
-            secrets=[db_instance.secret],
-            vpc=vpc,
-            security_groups=[db_security_group],
-            require_tls=False,
-        )
-
-        # RDS Proxy (replica - read)
-        replica_proxy = rds.DatabaseProxy(
-            self,
-            "AgrobotReplicaProxy",
-            proxy_target=rds.ProxyTarget.from_instance(read_replica),
             secrets=[db_instance.secret],
             vpc=vpc,
             security_groups=[db_security_group],
@@ -163,13 +153,12 @@ class AgrobotStack(Stack):
             ),
             timeout=Duration.seconds(60),
             memory_size=256,
-            reserved_concurrent_executions=2,
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             security_groups=[db_security_group],
             environment={
-                "AGROBOT_REPLICA_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{replica_proxy.endpoint}:5432/agrobot",
-                "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{primary_proxy.endpoint}:5432/agrobot",
+                "AGROBOT_REPLICA_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{read_replica.instance_endpoint.hostname}:5432/agrobot",
+                "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{db_proxy.endpoint}:5432/agrobot",
                 "AGROBOT_SQS_QUEUE_URL": alerts_queue.queue_url,
                 "AGROBOT_AWS_REGION": self.region,
                 "AGROBOT_ENVIRONMENT": "production",
@@ -211,8 +200,8 @@ class AgrobotStack(Stack):
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             security_groups=[db_security_group],
             environment={
-                "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{primary_proxy.endpoint}:5432/agrobot",
-                "AGROBOT_REPLICA_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{replica_proxy.endpoint}:5432/agrobot",
+                "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{db_proxy.endpoint}:5432/agrobot",
+                "AGROBOT_REPLICA_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{read_replica.instance_endpoint.hostname}:5432/agrobot",
                 "AGROBOT_AWS_REGION": self.region,
                 "AGROBOT_ENVIRONMENT": "production",
                 "POWERTOOLS_SERVICE_NAME": "dispatcher",
@@ -246,7 +235,7 @@ class AgrobotStack(Stack):
                 image=ecs.ContainerImage.from_asset("."),
                 container_port=8000,
                 environment={
-                    "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{primary_proxy.endpoint}:5432/agrobot",
+                    "AGROBOT_DATABASE_URL": f"postgresql+asyncpg://{{resolve}}@{db_proxy.endpoint}:5432/agrobot",
                     "AGROBOT_AWS_REGION": self.region,
                     "AGROBOT_ENVIRONMENT": "production",
                     "AGROBOT_KINESIS_STREAM_NAME": weather_stream.stream_name,

@@ -106,6 +106,28 @@ kinesis-shards: ## List Kinesis stream shards
 	@docker compose exec localstack aws --endpoint-url=http://localhost:4566 --region us-east-1 --no-sign-request \
 		kinesis describe-stream --stream-name weather-events --query 'StreamDescription.{Status:StreamStatus,Shards:length(Shards)}' --output table
 
+# ── AWS Deploy ───────────────────────────────────────────────
+
+deploy-bootstrap: ## Bootstrap CDK in your AWS account (one-time)
+	pip install -r infra/requirements.txt -q && cdk bootstrap
+
+deploy: ## Deploy all infrastructure to AWS
+	pip install -r infra/requirements.txt -q && cdk deploy --require-approval never
+
+deploy-destroy: ## DESTROY all AWS infrastructure (saves money!)
+	cdk destroy --force
+
+deploy-status: ## Check CloudFormation stack status
+	aws cloudformation describe-stacks --stack-name AgrobotStack --query 'Stacks[0].StackStatus' --output text
+
+deploy-test: ## Run integration tests against deployed AWS stack
+	./scripts/test-cloud.sh
+
+deploy-url: ## Print the deployed API URL
+	@aws cloudformation describe-stacks --stack-name AgrobotStack \
+		--query 'Stacks[0].Outputs[?contains(OutputKey,`ServiceURL`) || contains(OutputKey,`LoadBalancer`)].OutputValue' \
+		--output text | head -1
+
 # ── Cleanup ──────────────────────────────────────────────────
 
 clean: ## Remove all containers, volumes, and build cache
