@@ -6,7 +6,6 @@ Used for local development via Docker Compose.
 Usage: python -m src.lambdas.matching.local_runner
 """
 
-import json
 import logging
 import time
 
@@ -54,8 +53,8 @@ def main():
 
     # Import handler after config is loaded
     from src.lambdas.matching.parser import parse_dms_record
-    from src.lambdas.matching.handler import record_handler, _upsert_latest_reading, _evaluate_composite_rules, _publish_to_sqs, evaluate_threshold
-    from src.lambdas.matching.handler import _engine, h3, uuid, AlertRule, metrics
+    from src.lambdas.matching.handler import _upsert_latest_reading, _evaluate_composite_rules, _publish_to_sqs, evaluate_threshold
+    from src.lambdas.matching.handler import _engine, h3, uuid, AlertRule
     from sqlalchemy import select
     from sqlalchemy.orm import Session
     from src.shared.constants import H3_RESOLUTION

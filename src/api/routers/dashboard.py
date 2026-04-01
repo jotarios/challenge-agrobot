@@ -8,13 +8,11 @@ Serves an HTML page at /dashboard with auto-refresh showing:
 - Alert rules and rule groups count
 """
 
-import base64
-import json
 
 import boto3
 from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.alert_rule import AlertRule

@@ -15,7 +15,6 @@ Uses dual DB connections:
 
 import asyncio
 import json
-import logging
 from datetime import datetime, timedelta, timezone
 
 from aws_lambda_powertools import Logger, Metrics, Tracer

@@ -1,6 +1,5 @@
 """Unit tests for composite rule evaluation logic."""
 
-import pytest
 
 from src.shared.threshold import evaluate_threshold
 
