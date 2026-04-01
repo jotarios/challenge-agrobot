@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agrobot
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:3.0
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: kinesis,sqs,secretsmanager
+      DEFAULT_REGION: us-east-1
+    volumes:
+      - "./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment: &common-env
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_DEFAULT_REGION: "us-east-1"
+      POWERTOOLS_TRACE_DISABLED: "true"
+      AGROBOT_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@postgres:5432/agrobot"
+      AGROBOT_AWS_ENDPOINT_URL: "http://localstack:4566"
+      AGROBOT_AWS_REGION: "us-east-1"
+      AGROBOT_KINESIS_STREAM_NAME: "weather-events"
+      AGROBOT_SQS_QUEUE_URL: "http://localstack:4566/000000000000/agrobot-alerts"
+      AGROBOT_SQS_DLQ_URL: "http://localstack:4566/000000000000/agrobot-alerts-dlq"
+      AGROBOT_ENVIRONMENT: "development"
+      AGROBOT_JWT_SECRET_KEY: "dev-secret-change-in-production"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_started
+
+  matching-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: python -m src.lambdas.matching.local_runner
+    environment:
+      <<: *common-env
+    depends_on:
+      api:
+        condition: service_started
+
+  dispatcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    command: python -m src.lambdas.dispatcher.local_runner
+    environment:
+      <<: *common-env
+    depends_on:
+      api:
+        condition: service_started
+
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      <<: *common-env
+    profiles:
+      - ingest
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
