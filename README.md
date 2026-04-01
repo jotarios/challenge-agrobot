@@ -212,9 +212,13 @@ src/
     db.py                 Dual engine setup (primary + replica)
     threshold.py          Threshold comparison logic
 simulator/
-  ingest.py               Weather data simulator (NORMAL, HEAT_WAVE, COLD_SNAP, SEVERE_STORM)
+  ingest.py               Weather simulator for local dev (writes to DB + Kinesis)
+  db_only.py              DB-only simulator for cloud (writes to RDS, DMS picks up via CDC)
 infra/
-  stacks/agrobot_stack.py AWS CDK infrastructure
+  stacks/
+    network_stack.py      VPC (rarely changes)
+    data_stack.py         RDS, RDS Proxy, Kinesis, SQS
+    app_stack.py          Lambdas, ECS Fargate, ALB (deploys fast)
 tests/
   unit/                   Threshold logic, H3, auth, schemas, parser, providers
   integration/            API CRUD, IDOR prevention, health/status
@@ -222,6 +226,8 @@ scripts/
   entrypoint.sh           Docker entrypoint (migrations + seed)
   seed.py                 Database seed data
   localstack-init.sh      LocalStack resource creation
+  simulate-cloud.sh       Run simulator as ECS task against cloud RDS
+  test-cloud.sh           Integration tests against deployed AWS stack
 ```
 
 ## Design Decisions
@@ -264,6 +270,15 @@ make test-integration   Run integration tests
 make sqs-depth          Check SQS queue message counts
 make kinesis-shards     Show Kinesis stream info
 make clean              Remove everything including volumes
+
+# AWS Deploy
+make deploy             Deploy all 3 stacks (Network → Data → App)
+make deploy-app         Redeploy only App stack (~3 min)
+make deploy-destroy     Destroy all AWS infrastructure
+make deploy-status      Check all stack statuses
+make deploy-test        Run integration tests against cloud
+make deploy-simulate    Run simulator as ECS task (SCENARIO=HEAT_WAVE DURATION=10)
+make deploy-url         Print the deployed API URL
 ```
 
 ## Testing
@@ -282,24 +297,53 @@ make test-unit
 make test-integration
 ```
 
-## Production Deployment
+## AWS Deployment
 
-Infrastructure is defined in AWS CDK (`infra/`):
+Infrastructure is split into 3 CDK stacks for independent updates:
+
+| Stack | What | Deploy time |
+|-------|------|-------------|
+| AgrobotNetworkStack | VPC | ~2 min (rarely changes) |
+| AgrobotDataStack | RDS, RDS Proxy, Kinesis, SQS | ~12 min |
+| AgrobotAppStack | Lambdas, ECS Fargate, ALB | ~3 min |
 
 ```bash
-cd infra
-pip install -r requirements.txt
-cdk deploy
+# First time: deploy everything
+make deploy
+
+# App-only changes (Dockerfile, code): fast redeploy
+make deploy-app
+
+# Simulate weather events against cloud RDS
+make deploy-simulate SCENARIO=HEAT_WAVE DURATION=10
+make deploy-simulate SCENARIO=SEVERE_STORM EVENTS=100
+
+# Run integration tests against cloud
+make deploy-test
+
+# IMPORTANT: tear down when done (~$240/month if left running)
+make deploy-destroy
 ```
 
-This provisions: VPC, RDS (+ Read Replica + 2 RDS Proxies), Kinesis (2 shards), SQS (+ DLQ), Lambda (Matching Engine + Dispatcher), ECS Fargate (API), API Gateway.
+### DMS Setup (Manual, not in CDK)
 
-**DMS is configured manually** per the runbook (not in CDK). See `docs/designs/weather-notifications.md` for the full deployment order.
+DMS bridges RDS → Kinesis via CDC. It's not included in CDK because DMS resources are notoriously fragile to automate. Setup requires:
 
-**Required env vars in production:**
-- `AGROBOT_DATABASE_URL` - Primary RDS endpoint
-- `AGROBOT_REPLICA_DATABASE_URL` - Read Replica endpoint
-- `AGROBOT_JWT_SECRET_KEY` - From AWS Secrets Manager
+1. Create a DMS replication instance (dms.t3.medium, ~$50/month)
+2. Create a source endpoint pointing to the RDS PostgreSQL instance
+3. Create a target endpoint pointing to the `weather-events` Kinesis stream
+4. Create an IAM role allowing DMS to write to Kinesis
+5. Create a CDC replication task filtering on `public.weather_data`
+6. Start the task and verify events flow to the Matching Engine Lambda
+
+The RDS parameter group already has `rds.logical_replication = 1` enabled (set by CDK). See `docs/designs/weather-notifications.md` for details.
+
+**Without DMS:** Use the local Docker Compose setup where the simulator pushes directly to LocalStack Kinesis for full pipeline testing.
+
+**RDS credentials** are managed automatically via AWS Secrets Manager (created by CDK). The ECS tasks and Lambdas read credentials at deploy time.
+
+**Required env vars in production (beyond CDK-managed):**
+- `AGROBOT_JWT_SECRET_KEY` - Override the default in Secrets Manager
 - `AGROBOT_KAPSO_API_URL` - Real Kapso endpoint
 - `AGROBOT_KAPSO_API_KEY` - Kapso API key
 
